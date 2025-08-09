@@ -37,32 +37,62 @@ def solve_stub(run_id: str) -> dict:
     return {"run_id": run_id, "status": "succeeded", "objective_value": 123.45}
 
 
-@celery_app.task
+@celery_app.task(name="tasks.solve_model_task")
 def solve_model_task(run_id: str, model_json: dict, solver: str | None = None, params: dict | None = None) -> dict:
-    """Solve an optimisation model using the strategy pattern and return the result.
+    """Solve an optimisation model using the strategy pattern and persist state.
 
-    This task delegates to the ``solve_model`` function defined in
-    ``app/workers/solve.py``.  It expects a parsed model JSON (e.g. as
-    returned by the AI translation endpoint), an optional explicit solver
-    name, and solver ‑specific parameters.  The task stores and returns
-    the solver result dictionary.  In a real implementation this would
-    also persist results to the database and object storage, and emit
-    webhook events.
+    This task updates the corresponding ``Run`` record in the database
+    throughout its lifecycle: it marks the run as ``running`` at the
+    beginning, records start and finish timestamps, and stores solver
+    results when complete.  If solver adapters are unavailable, a
+    ``RuntimeError`` is raised immediately.
 
     Args:
-        run_id: Identifier for the run to which this solve corresponds.
+        run_id: Identifier for the run (as a string representation of the integer primary key).
         model_json: The optimisation model definition.
         solver: Optional solver name (e.g. "ortools", "cvxpy", "pyomo").
-        params: Optional parameters to pass through to the solver.
+        params: Optional solver parameters.
 
     Returns:
-        A dictionary with solver status, objective value, variable assignments
-        and logs.
+        A dictionary with solver status, objective value, variable assignments and logs.
     """
     if solve_model is None:
         raise RuntimeError("Solver adapters are not available. Ensure optional dependencies are installed.")
 
-    result = solve_model(model_json, solver=solver, params=params or {})
-    # Attach the run_id to the result for traceability
-    result["run_id"] = run_id
-    return result
+    # Import database components lazily to avoid circular imports
+    from ..api.database import SessionLocal  # type: ignore
+    from ..api import models  # type: ignore
+    import datetime as _dt
+
+    session = SessionLocal()
+    # Parse run_id to integer primary key
+    try:
+        run_pk = int(run_id.replace("run_", "")) if isinstance(run_id, str) and run_id.startswith("run_") else int(run_id)
+    except Exception:
+        run_pk = None
+
+    try:
+        # Update run status to running
+        if run_pk is not None:
+            run = session.query(models.Run).filter(models.Run.id == run_pk).first()
+            if run:
+                run.status = "running"
+                run.started_at = _dt.datetime.utcnow()
+                session.commit()
+
+        # Execute the solver
+        result = solve_model(model_json, solver=solver, params=params or {})
+        result["run_id"] = run_id
+
+        # Persist result status
+        if run_pk is not None:
+            run = session.query(models.Run).filter(models.Run.id == run_pk).first()
+            if run:
+                run.status = result.get("status", "succeeded")
+                run.objective_value = result.get("objective_value")
+                run.finished_at = _dt.datetime.utcnow()
+                session.commit()
+
+        return result
+    finally:
+        session.close()
