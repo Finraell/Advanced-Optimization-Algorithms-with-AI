@@ -9,3 +9,5 @@ ortools
 cvxpy
 pyomo
 alembic
+authlib
+PyJWT
