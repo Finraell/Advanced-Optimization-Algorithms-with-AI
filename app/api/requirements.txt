@@ -5,3 +5,6 @@ sqlalchemy
 python-multipart
 openai
 tenacity
+ortools
+cvxpy
+pyomo
