@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "advanced-optimization-ai.fullname" . }}-api
+  labels:
+    {{- include "advanced-optimization-ai.labels" . | nindent 4 }}
+    component: api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "advanced-optimization-ai.selectorLabels" . | nindent 6 }}
+      component: api
+  template:
+    metadata:
+      labels:
+        {{- include "advanced-optimization-ai.selectorLabels" . | nindent 8 }}
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.databaseUrl | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.redisUrl | quote }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
