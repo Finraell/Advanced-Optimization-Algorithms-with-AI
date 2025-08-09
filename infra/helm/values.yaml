@@ -1,5 +1,6 @@
 replicaCount: 1
 
+# Container images for each component
 image:
   repository: ghcr.io/your-username/advanced-optimization-api
   tag: "latest"
@@ -12,6 +13,11 @@ workerImage:
   repository: ghcr.io/your-username/advanced-optimization-worker
   tag: "latest"
 
+# Environment variables for service discovery
+apiUrl: "http://advanced-optimization-api"
+databaseUrl: "postgresql://user:password@db-host:5432/dbname"
+redisUrl: "redis://redis:6379/0"
+
 service:
   type: ClusterIP
   port: 80
@@ -20,3 +26,4 @@ resources: {}
 
 ingress:
   enabled: false
+  host: "advanced-optimization-ai.example.com"
