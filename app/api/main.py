@@ -1,0 +1,96 @@
+"""Entry point for the API service.
+
+This FastAPI application defines a handful of endpoints that demonstrate how the
+optimisation platform might be shaped.  The handlers are intentionally
+minimal – they return static responses to illustrate request/response
+schemas.  In a full implementation these would call into the modelling layer,
+persist model versions, submit runs to a task queue and return results.
+"""
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
+
+
+app = FastAPI(title="Advanced Optimization Algorithms with AI",
+              description="APIs for translating, storing and running optimisation models.")
+
+
+class TranslateRequest(BaseModel):
+    prompt: str = Field(..., description="Natural language description of the optimisation problem.")
+    domain: Optional[str] = Field(None, description="Optional domain hint (e.g. supply_chain, scheduling).")
+    output_format: str = Field("json", description="Output format for the generated model (json or pyomo).")
+
+
+class TranslateResponse(BaseModel):
+    model_json: Dict[str, Any]
+    pyomo_script: Optional[str] = None
+    audits: Dict[str, Any] = Field(default_factory=dict)
+    recommendations: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/v1/models/translate", response_model=TranslateResponse)
+async def translate_model(req: TranslateRequest) -> TranslateResponse:
+    """Translate a natural language prompt into a model schema.
+
+    This implementation is a stub: it returns a trivial linear programme for
+    demonstration purposes.  In a production system this would call an AI
+    service (OpenAI/vLLM) and a rule‑based parser to construct a valid
+    optimisation model.
+    """
+    # Return a very simple example model
+    model_json = {
+        "name": "Example LP",
+        "type": "LP",
+        "decision_variables": [
+            {"name": "x", "lower": 0, "upper": None, "integrality": "continuous"}
+        ],
+        "objective": {"sense": "min", "expr": "2 * x"},
+        "constraints": [
+            {"name": "lower_bound", "expr": "x >= 1"},
+            {"name": "upper_bound", "expr": "x <= 10"}
+        ],
+        "metadata": {"domain": req.domain or "unspecified"}
+    }
+    return TranslateResponse(
+        model_json=model_json,
+        pyomo_script="# Pyomo script would be generated here",
+        audits={"status": "stub"},
+        recommendations={"solver": "ortools", "time_limit_sec": 60}
+    )
+
+
+class RunRequest(BaseModel):
+    model_version_id: str
+    solver: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    status: str
+    objective_value: Optional[float] = None
+
+
+@app.post("/v1/runs", response_model=RunResponse)
+async def start_run(req: RunRequest) -> RunResponse:
+    """Submit a model run request.
+
+    In this stub, the run is not actually executed – instead a fake run
+    identifier and status are returned.  Real implementations would enqueue
+    the job onto a Celery or RQ worker and persist the run metadata in
+    Postgres.
+    """
+    # Generate a fake run identifier
+    run_id = "run_stub_123"
+    return RunResponse(run_id=run_id, status="pending")
+
+
+@app.get("/v1/runs/{run_id}", response_model=RunResponse)
+async def get_run(run_id: str) -> RunResponse:
+    """Retrieve the status of a run.
+
+    This stub returns a constant response.  A real implementation would
+    query the database for run status and objective value.
+    """
+    return RunResponse(run_id=run_id, status="succeeded", objective_value=42.0)
