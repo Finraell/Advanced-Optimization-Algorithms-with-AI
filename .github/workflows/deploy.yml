@@ -1,0 +1,44 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Set up gcloud or aws credentials here. This example uses gcloud.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: 'kubectl,helm'
+
+      - name: Configure kubectl
+        run: |
+          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} --region=${{ secrets.GCP_REGION }} --project=${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v1
+
+      - name: Deploy via Helm
+        run: |
+          helm upgrade --install aoaa-chart ./infra/helm \
+            --namespace default \
+            --set api.image.repository=ghcr.io/${{ github.repository_owner }}/advanced-optimization-api \
+            --set api.image.tag=latest \
+            --set frontend.image.repository=ghcr.io/${{ github.repository_owner }}/advanced-optimization-frontend \
+            --set frontend.image.tag=latest \
+            --set worker.image.repository=ghcr.io/${{ github.repository_owner }}/advanced-optimization-worker \
+            --set worker.image.tag=latest \
+            --set ingress.host=${{ secrets.APP_HOSTNAME }}
