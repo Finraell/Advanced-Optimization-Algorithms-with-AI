@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "advanced-optimization-ai.fullname" . }}-frontend
+  labels:
+    {{- include "advanced-optimization-ai.labels" . | nindent 4 }}
+    component: frontend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "advanced-optimization-ai.selectorLabels" . | nindent 6 }}
+      component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "advanced-optimization-ai.selectorLabels" . | nindent 8 }}
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontendImage.repository }}:{{ .Values.frontendImage.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ .Values.apiUrl | quote }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
