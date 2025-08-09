@@ -16,6 +16,20 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from . import models
 
+# Import authentication utilities and role enforcement.  The auth
+# router defines OAuth/OIDC login endpoints and dependencies for
+# retrieving the current user and checking permissions.  If the auth
+# module is unavailable (e.g. during early scaffolding), these
+# imports will fall back to ``None`` so that the API can still run.
+try:
+    from .auth import router as auth_router, require_role  # type: ignore
+except Exception:
+    auth_router = None  # type: ignore
+    def require_role(*args, **kwargs):  # type: ignore
+        def dummy_dependency():
+            return None
+        return dummy_dependency
+
 # Import the AI translation provider from the ai package.  This provider
 # encapsulates the logic for calling a large language model and parsing
 # the returned JSON into a model schema.  At runtime the API key can be
@@ -31,6 +45,10 @@ except Exception:
 app = FastAPI(title="Advanced Optimization Algorithms with AI",
               description="APIs for translating, storing and running optimisation models.")
 
+# Include authentication routes if available
+if auth_router is not None:
+    app.include_router(auth_router)
+
 
 class TranslateRequest(BaseModel):
     prompt: str = Field(..., description="Natural language description of the optimisation problem.")
@@ -45,13 +63,17 @@ class TranslateResponse(BaseModel):
     recommendations: Dict[str, Any] = Field(default_factory=dict)
 
 
-@app.post("/v1/models/translate", response_model=TranslateResponse)
+@app.post(
+    "/v1/models/translate",
+    response_model=TranslateResponse,
+    dependencies=[Depends(require_role(["admin", "editor"]))],
+)
 async def translate_model(req: TranslateRequest) -> TranslateResponse:
     """Translate a natural language prompt into a model schema.
 
     This implementation is a stub: it returns a trivial linear programme for
     demonstration purposes.  In a production system this would call an AI
-    service (OpenAI/vLLM) and a rule‑based parser to construct a valid
+    service (OpenAI/vLLM) and a rule based parser to construct a valid
     optimisation model.
     """
     """Translate a natural language problem into a formal model.
@@ -92,7 +114,11 @@ class RunResponse(BaseModel):
     objective_value: Optional[float] = None
 
 
-@app.post("/v1/runs", response_model=RunResponse)
+@app.post(
+    "/v1/runs",
+    response_model=RunResponse,
+    dependencies=[Depends(require_role(["admin", "editor"]))],
+)
 async def start_run(req: RunRequest, db: Session = Depends(get_db)) -> RunResponse:
     """Submit a model run request.
 
@@ -132,7 +158,11 @@ async def start_run(req: RunRequest, db: Session = Depends(get_db)) -> RunRespon
     return RunResponse(run_id=run_id, status="pending")
 
 
-@app.get("/v1/runs/{run_id}", response_model=RunResponse)
+@app.get(
+    "/v1/runs/{run_id}",
+    response_model=RunResponse,
+    dependencies=[Depends(require_role(["admin", "editor", "viewer"]))],
+)
 async def get_run(run_id: str, db: Session = Depends(get_db)) -> RunResponse:
     """Retrieve the status of a run.
 
